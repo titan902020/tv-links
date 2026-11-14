@@ -1,7 +1,7 @@
 {
   "name": "tv-links",
   "appName": "TV Links",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Open any website on the TV and control it from your phone: touchpad cursor, clicks, scroll, typing, links.",
   "packageType": "mods",
   "websiteURL": "https://www.google.com/",

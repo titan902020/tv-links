@@ -18,7 +18,117 @@ function tvAddr() {
   return '?:' + PORT;
 }
 
+// ---------- DevTools connection to the page (works on sites whose CSP blocks our SSE) ----------
+var net = require('net');
+var fs = require('fs');
+var crypto = require('crypto');
+var cdp = null, cdpId = 0, cdpBusy = false;
+
+function listeningPorts() {
+  var ports = [];
+  ['/proc/net/tcp', '/proc/net/tcp6'].forEach(function (f) {
+    var txt = '';
+    try { txt = fs.readFileSync(f, 'utf8'); } catch (e) { return; }
+    txt.split('\n').slice(1).forEach(function (l) {
+      var p = l.trim().split(/\s+/);
+      if (p.length < 4 || p[3] !== '0A') return;
+      var port = parseInt(p[1].split(':')[1], 16);
+      if (port && port !== PORT && port !== 26101 && ports.indexOf(port) < 0) ports.push(port);
+    });
+  });
+  return ports;
+}
+
+function getJson(port, path, cb) {
+  var done = false;
+  var req = http.get({ host: '127.0.0.1', port: port, path: path, headers: { Host: '127.0.0.1' } }, function (res) {
+    var b = '';
+    res.on('data', function (c) { b += c; });
+    res.on('end', function () { if (done) return; done = true; try { cb(null, JSON.parse(b)); } catch (e) { cb(e); } });
+  });
+  req.setTimeout(800, function () { req.abort(); });
+  req.on('error', function (e) { if (!done) { done = true; cb(e); } });
+}
+
+function findPage(cb) {
+  var ports = listeningPorts(), i = 0;
+  (function next() {
+    if (i >= ports.length) return cb(null);
+    var port = ports[i++];
+    getJson(port, '/json/list', function (err, list) {
+      if (!err && list && list.length) {
+        for (var k = 0; k < list.length; k++) {
+          if (list[k].webSocketDebuggerUrl && (!list[k].type || list[k].type === 'page')) return cb(list[k].webSocketDebuggerUrl);
+        }
+      }
+      next();
+    });
+  })();
+}
+
+function wsConnect(url, onOpen, onClose) {
+  var m = /^ws:\/\/([^:\/]+):(\d+)(\/.*)$/.exec(url);
+  if (!m) return onClose();
+  var sock = net.connect(+m[2], m[1]);
+  var key = crypto.randomBytes(16).toString('base64');
+  var buf = new Buffer(0), open = false, closed = false;
+  function close() { if (closed) return; closed = true; try { sock.destroy(); } catch (e) {} onClose(); }
+  sock.on('connect', function () {
+    sock.write('GET ' + m[3] + ' HTTP/1.1\r\nHost: 127.0.0.1:' + m[2] + '\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n' +
+      'Sec-WebSocket-Key: ' + key + '\r\nSec-WebSocket-Version: 13\r\n\r\n');
+  });
+  sock.on('data', function (d) {
+    buf = Buffer.concat([buf, d]);
+    if (!open) {
+      var idx = buf.toString('binary').indexOf('\r\n\r\n');
+      if (idx < 0) return;
+      if (buf.toString('utf8', 0, idx).indexOf(' 101') < 0) return close();
+      buf = buf.slice(idx + 4); open = true;
+      onOpen(function send(text) {
+        var payload = new Buffer(text, 'utf8'), len = payload.length, head;
+        if (len < 126) { head = new Buffer(2); head[1] = 0x80 | len; }
+        else if (len < 65536) { head = new Buffer(4); head[1] = 0x80 | 126; head.writeUInt16BE(len, 2); }
+        else { head = new Buffer(10); head[1] = 0x80 | 127; head.writeUInt32BE(0, 2); head.writeUInt32BE(len, 6); }
+        head[0] = 0x81;
+        var mask = crypto.randomBytes(4);
+        for (var i = 0; i < len; i++) payload[i] ^= mask[i % 4];
+        try { sock.write(Buffer.concat([head, mask, payload])); } catch (e) { close(); }
+      });
+    }
+    // Discard incoming frames (we never need the replies); answer close frames.
+    while (buf.length >= 2) {
+      var op = buf[0] & 0x0f, ln = buf[1] & 0x7f, off = 2;
+      if (ln === 126) { if (buf.length < 4) return; ln = buf.readUInt16BE(2); off = 4; }
+      else if (ln === 127) { if (buf.length < 10) return; ln = buf.readUInt32BE(6); off = 10; }
+      if (buf.length < off + ln) return;
+      buf = buf.slice(off + ln);
+      if (op === 8) return close();
+    }
+  });
+  sock.on('error', close);
+  sock.on('close', close);
+}
+
+function ensureCdp() {
+  if (cdp || cdpBusy) return;
+  cdpBusy = true;
+  findPage(function (url) {
+    if (!url) { cdpBusy = false; return; }
+    wsConnect(url, function (send) {
+      cdp = send; cdpBusy = false;
+      send(JSON.stringify({ id: ++cdpId, method: 'Page.setBypassCSP', params: { enabled: true } }));
+    }, function () { cdp = null; cdpBusy = false; });
+  });
+}
+setInterval(ensureCdp, 3000);
+ensureCdp();
+
 function emit(ev) {
+  if (cdp) {
+    cdp(JSON.stringify({ id: ++cdpId, method: 'Runtime.evaluate', params: {
+      expression: 'window.__tvlHandle&&window.__tvlHandle(' + JSON.stringify(ev) + ')' } }));
+    return;
+  }
   var line = 'data: ' + JSON.stringify(ev) + '\n\n';
   for (var i = clients.length - 1; i >= 0; i--) {
     try { clients[i].write(line); } catch (e) { clients.splice(i, 1); }
@@ -126,7 +236,8 @@ var server = http.createServer(function (req, res) {
     return;
   }
   if (req.method === 'GET' && path === '/status') {
-    return send(res, 200, JSON.stringify({ ok: true, pages: clients.length, addr: tvAddr() }), 'application/json');
+    return send(res, 200, JSON.stringify({ ok: true, pages: clients.length, cdp: !!cdp, addr: tvAddr(),
+      ports: listeningPorts() }), 'application/json');
   }
   if (req.method === 'POST' && path.indexOf('/api/') === 0) {
     var body = '';

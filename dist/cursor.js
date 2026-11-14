@@ -172,6 +172,10 @@
     else if (ev.t === 'hello') say('Телефон: ' + ev.addr, 6000);
   }
 
+  // The TV service calls this directly through DevTools (no network from the page, so site CSP does not matter).
+  var lastViaCdp = 0;
+  window.__tvlHandle = function (ev) { lastViaCdp = Date.now(); handle(ev); };
+
   var es, retry = 1000;
   function connect() {
     try { es = new EventSource(SVC + '/stream?u=' + encodeURIComponent(location.href)); } catch (e) { return; }
