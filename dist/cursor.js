@@ -123,17 +123,27 @@
       'max-width:none!important;max-height:none!important;z-index:2147483646!important;background:#000!important;margin:0!important;border:0!important';
     document.documentElement.style.overflow = 'hidden';
   }
+  // The TV app already fills the screen, so "fullscreen" = stretch the player over the page.
+  // Real fullscreen would hide our cursor (only the fullscreen element is drawn).
+  function unstretch() { if (fake) { fake.el.style.cssText = fake.css; document.documentElement.style.overflow = fake.html; fake = null; } }
   function toggleFull() {
     if (document.fullscreenElement || document.webkitFullscreenElement) {
       (document.exitFullscreen || document.webkitExitFullscreen).call(document); return;
     }
-    if (fake) { fake.el.style.cssText = fake.css; document.documentElement.style.overflow = fake.html; fake = null; return; }
-    var el = biggest(); if (!el) return;
-    var f = el.requestFullscreen || el.webkitRequestFullscreen;
-    try {
-      var p = f ? f.call(el) : null;
-      if (p && p.catch) p.catch(function () { stretch(el); }); else if (!f) stretch(el);
-    } catch (e) { stretch(el); }
+    if (fake) { unstretch(); return; }
+    var el = biggest(); if (el) stretch(el);
+  }
+  if (isTop) {
+    // If the site's own player button goes real fullscreen, switch to the stretched view so the cursor stays visible.
+    var onFs = function () {
+      var fe = document.fullscreenElement || document.webkitFullscreenElement;
+      if (!fe) return;
+      var target = fe === document.documentElement || fe === document.body ? biggest() : fe;
+      (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      if (target && !fake) setTimeout(function () { stretch(target); }, 50);
+    };
+    document.addEventListener('fullscreenchange', onFs);
+    document.addEventListener('webkitfullscreenchange', onFs);
   }
 
   function broadcast(msg) {
@@ -210,7 +220,7 @@
   // The TV service calls this directly through DevTools (no network from the page, so site CSP does not matter).
   var lastViaCdp = 0;
   window.__tvlHandle = function (ev) { lastViaCdp = Date.now(); handle(ev); };
-  window.__tvlVer = 3;
+  window.__tvlVer = 4;
 
   var es, retry = 1000;
   function connect() {
