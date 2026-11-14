@@ -113,6 +113,16 @@ function wsConnect(url, onOpen, onClose) {
   sock.on('close', close);
 }
 
+var cursorCode = null;
+function fetchCursor(cb) {
+  if (cursorCode) return cb(cursorCode);
+  require('https').get('https://cdn.jsdelivr.net/gh/titan902020/tv-links@main/dist/cursor.js', function (res) {
+    var b = ''; res.setEncoding('utf8');
+    res.on('data', function (c) { b += c; });
+    res.on('end', function () { if (res.statusCode === 200) cursorCode = b; cb(cursorCode); });
+  }).on('error', function () { cb(null); });
+}
+
 function ensureCdp() {
   if (cdp || cdpBusy) return;
   cdpBusy = true;
@@ -121,6 +131,12 @@ function ensureCdp() {
     wsConnect(url, function (send) {
       cdp = send; cdpBusy = false;
       send(JSON.stringify({ id: ++cdpId, method: 'Page.setBypassCSP', params: { enabled: true } }));
+      // Inject the cursor ourselves too, into the page's main world and every future document.
+      fetchCursor(function (code) {
+        if (!code || cdp !== send) return;
+        send(JSON.stringify({ id: ++cdpId, method: 'Page.addScriptToEvaluateOnNewDocument', params: { source: code } }));
+        send(JSON.stringify({ id: ++cdpId, method: 'Runtime.evaluate', params: { expression: code } }));
+      });
     }, function () { cdp = null; cdpBusy = false; });
   });
 }
@@ -264,7 +280,7 @@ var opts = {};
 server.on('error', function (e) { console.log('tv-links service error: ' + e.message); });
 
 module.exports = {
-  version: '0.1.2',
+  version: '0.1.3',
   start: function (o) { opts = o || {}; server.listen(PORT, '0.0.0.0'); ensureCdp(); },
   stop: function (cb) {
     timers.forEach(clearInterval);

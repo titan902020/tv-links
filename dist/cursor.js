@@ -4,10 +4,10 @@
  * so players inside iframes can be clicked too.
  */
 (function () {
-  if (window.__tvLinks) return;
-  window.__tvLinks = true;
-  var SVC = 'http://127.0.0.1:8781';
   var isTop = window.top === window;
+  if (isTop ? window.__tvlHandle : window.__tvLinksFrame) return;
+  if (!isTop) window.__tvLinksFrame = true;
+  var SVC = 'http://127.0.0.1:8781';
   var focused = null;
 
   function elAt(x, y) { return document.elementFromPoint(x, y); }
