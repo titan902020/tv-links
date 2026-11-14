@@ -88,7 +88,7 @@ section{display:none}section.on{display:block}
 
 <script>
 (function(){
-var LAN = location.port === "8781";
+var LAN = location.protocol === "http:", BASE = window.PAD_API || "/api/";
 var st = document.getElementById("st"), dot = document.getElementById("dot"), ws = null, tv = LAN ? 1 : 0;
 function show(t, ok){ st.textContent = t; dot.style.background = ok ? "var(--ok)" : "var(--red)"; }
 function conn(){
@@ -103,7 +103,7 @@ if (!LAN) setInterval(function(){ if (ws && ws.readyState === 1) ws.send("ping")
 document.addEventListener("visibilitychange", function(){ if (!LAN && !document.hidden && (!ws || ws.readyState > 1)) conn(); });
 function api(a, d){
   d = d || {};
-  if (LAN) { fetch("/api/" + a, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(d) }).catch(function(){ show("нет связи с ТВ", false); }); return; }
+  if (LAN) { fetch(BASE + a, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(d) }).catch(function(){ show("нет связи с ТВ", false); }); return; }
   if (ws && ws.readyState === 1) ws.send(JSON.stringify({ a: a, d: d }));
 }
 function buzz(){ if (navigator.vibrate) navigator.vibrate(8); }

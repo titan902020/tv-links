@@ -152,7 +152,7 @@ timers.push(setInterval(function () {
 function emit(ev) {
   if (cdp) {
     cdp(JSON.stringify({ id: ++cdpId, method: 'Runtime.evaluate', params: {
-      expression: 'window.__tvlHandle&&window.__tvlHandle(' + JSON.stringify(ev) + ')' } }));
+      expression: 'window.__tvlHandle&&window.__tvlHandle(' + JSON.stringify(ev) + ')', userGesture: true } }));
     return;
   }
   var line = 'data: ' + JSON.stringify(ev) + '\n\n';
@@ -377,7 +377,7 @@ function selfReload() {
 server.on('error', function (e) { console.log('tv-links service error: ' + e.message); });
 
 module.exports = {
-  version: '0.2.0',
+  version: '0.2.1',
   start: function (o) {
     opts = o || {}; server.listen(PORT, '0.0.0.0'); ensureCdp(); cloudConnect();
     getRaw('pad.html', function (h) { if (h) padHtml = h; });

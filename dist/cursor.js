@@ -107,6 +107,35 @@
     }
   }
 
+  // Fullscreen: real fullscreen of the largest video/iframe; if the TV refuses, stretch it over the page.
+  var fake = null;
+  function biggest() {
+    var best = null, area = 0, els = document.querySelectorAll('video,iframe,embed,object');
+    for (var i = 0; i < els.length; i++) {
+      var r = els[i].getBoundingClientRect(), a = r.width * r.height;
+      if (a > area && r.width > 100 && r.height > 60) { area = a; best = els[i]; }
+    }
+    return best;
+  }
+  function stretch(el) {
+    fake = { el: el, css: el.style.cssText, html: document.documentElement.style.overflow };
+    el.style.cssText += ';position:fixed!important;left:0!important;top:0!important;width:100vw!important;height:100vh!important;' +
+      'max-width:none!important;max-height:none!important;z-index:2147483646!important;background:#000!important;margin:0!important;border:0!important';
+    document.documentElement.style.overflow = 'hidden';
+  }
+  function toggleFull() {
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      (document.exitFullscreen || document.webkitExitFullscreen).call(document); return;
+    }
+    if (fake) { fake.el.style.cssText = fake.css; document.documentElement.style.overflow = fake.html; fake = null; return; }
+    var el = biggest(); if (!el) return;
+    var f = el.requestFullscreen || el.webkitRequestFullscreen;
+    try {
+      var p = f ? f.call(el) : null;
+      if (p && p.catch) p.catch(function () { stretch(el); }); else if (!f) stretch(el);
+    } catch (e) { stretch(el); }
+  }
+
   function broadcast(msg) {
     var fr = document.querySelectorAll('iframe,frame');
     for (var i = 0; i < fr.length; i++) { try { fr[i].contentWindow.postMessage(msg, '*'); } catch (e) {} }
@@ -173,6 +202,7 @@
     else if (ev.t === 'f') history.forward();
     else if (ev.t === 'r') location.reload();
     else if (ev.t === 'go') { say('Открываю…'); location.href = ev.u; }
+    else if (ev.t === 'media' && ev.cmd === 'full') toggleFull();
     else if (ev.t === 'media') { media(ev.cmd, ev.v); broadcast({ tvl: 'media', cmd: ev.cmd, v: ev.v }); }
     else if (ev.t === 'hello') say('Телефон: ' + ev.addr, 6000);
   }
