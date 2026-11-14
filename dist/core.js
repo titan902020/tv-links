@@ -75,7 +75,9 @@ function wsConnect(url, onOpen, onClose, onMessage) {
   if (!u) return onClose();
   var secure = u[1] === 'wss';
   var m = [null, u[2], u[3] || (secure ? '443' : '80'), u[4]];
-  var sock = secure ? require('tls').connect({ host: m[1], port: +m[2], servername: m[1] }) : net.connect(+m[2], m[1]);
+  var local = /^(127\.|192\.168\.|10\.)/.test(m[1]);
+  var sock = secure ? require('tls').connect({ host: m[1], port: +m[2], servername: local ? undefined : m[1], rejectUnauthorized: !local })
+                    : net.connect(+m[2], m[1]);
   var key = crypto.randomBytes(16).toString('base64');
   var buf = new Buffer(0), open = false, closed = false;
   function close() { if (closed) return; closed = true; try { sock.destroy(); } catch (e) {} onClose(); }
@@ -186,6 +188,8 @@ function api(name, d) {
   else if (name === 'forward') emit({ t: 'f' });
   else if (name === 'reload') emit({ t: 'r' });
   else if (name === 'open') { var u = normalize(d.url); if (!u) return false; emit({ t: 'go', u: u }); }
+  else if (name === 'key') { if (!/^KEY_[A-Z0-9_]+$/.test(String(d.k))) return false; tvKey(String(d.k)); }
+  else if (name === 'app') { if (!/^[A-Za-z0-9._]+$/.test(String(d.id))) return false; tvApp(String(d.id)); }
   else if (name === 'media') emit({ t: 'media', cmd: String(d.cmd), v: Number(d.v) || 0 });
   else return false;
   return true;
@@ -246,7 +250,7 @@ function send(res, code, body, type) {
 var server = http.createServer(function (req, res) {
   var path = req.url.split('?')[0];
   if (req.method === 'OPTIONS') return send(res, 204, '');
-  if (req.method === 'GET' && (path === '/' || path === '/pad')) return send(res, 200, PAD);
+  if (req.method === 'GET' && (path === '/' || path === '/pad')) return send(res, 200, padHtml || PAD);
   if (req.method === 'GET' && path === '/stream') {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
@@ -299,6 +303,34 @@ var server = http.createServer(function (req, res) {
 var CFG = '/home/owner/share/tvlinks.json';
 var cloud = { send: null, url: null, ok: false, retry: 2000, timer: null };
 function readCfg() { try { return JSON.parse(fs.readFileSync(CFG, 'utf8')); } catch (e) { return {}; } }
+function writeCfg(patch) { var c = readCfg(); for (var k in patch) c[k] = patch[k]; fs.writeFileSync(CFG, JSON.stringify(c)); }
+
+// ---------- TV remote keys and apps through the TV's own remote API ----------
+var rc = { send: null, busy: false, queue: [], close: null };
+function rcConnect() {
+  if (rc.send || rc.busy) return;
+  rc.busy = true;
+  var tok = readCfg().rcToken;
+  var url = 'wss://127.0.0.1:8002/api/v2/channels/samsung.remote.control?name=' + new Buffer('TV Links').toString('base64') + (tok ? '&token=' + tok : '');
+  rc.close = wsConnect(url, function (send) {
+    rc.pending = send;
+  }, function () { rc.send = null; rc.busy = false; rc.pending = null; }, function (text) {
+    var m = JSON.parse(text);
+    if (m.event === 'ms.channel.connect') {
+      if (m.data && m.data.token) writeCfg({ rcToken: m.data.token });
+      rc.send = rc.pending; rc.busy = false;
+      while (rc.queue.length) rc.send(rc.queue.shift());
+    } else if (m.event === 'ms.channel.unauthorized' || m.event === 'ms.channel.timeOut') { if (rc.close) rc.close(); }
+  });
+}
+function tvKey(k) {
+  var msg = JSON.stringify({ method: 'ms.remote.control', params: { Cmd: 'Click', DataOfCmd: k, Option: 'false', TypeOfRemote: 'SendRemoteKey' } });
+  if (rc.send) rc.send(msg); else { rc.queue.push(msg); rc.queue = rc.queue.slice(-20); rcConnect(); }
+}
+function tvApp(id) {
+  var r = http.request({ host: '127.0.0.1', port: 8001, method: 'POST', path: '/api/v2/applications/' + encodeURIComponent(id) }, function (res) { res.resume(); });
+  r.on('error', function () {}); r.end();
+}
 function cloudConnect() {
   var c = readCfg();
   if (!c.url || !c.key || cloud.send || cloud.stopped) return;
@@ -318,6 +350,7 @@ function cloudConnect() {
 }
 timers.push(setInterval(function () { if (cloud.send) cloud.send('ping'); else cloudConnect(); }, 25000));
 
+var padHtml = null;
 var opts = {};
 
 // Updates: fetch the newest core straight from GitHub (jsDelivr caches branches for hours).
@@ -344,11 +377,15 @@ function selfReload() {
 server.on('error', function (e) { console.log('tv-links service error: ' + e.message); });
 
 module.exports = {
-  version: '0.1.6',
-  start: function (o) { opts = o || {}; server.listen(PORT, '0.0.0.0'); ensureCdp(); cloudConnect(); },
+  version: '0.2.0',
+  start: function (o) {
+    opts = o || {}; server.listen(PORT, '0.0.0.0'); ensureCdp(); cloudConnect();
+    getRaw('pad.html', function (h) { if (h) padHtml = h; });
+  },
   stop: function (cb) {
     cloud.stopped = true; clearTimeout(cloud.timer);
     if (cloud.close) cloud.close();
+    if (rc.close) rc.close();
     if (cdpClose) { var cc = cdpClose; cdpClose = null; cc(); }
     timers.forEach(clearInterval);
     clients.forEach(function (c) { try { c.end(); } catch (e) {} });

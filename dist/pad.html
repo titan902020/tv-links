@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0b0c10">
+<title>TV Links</title>
+<style>
+:root{--bg:#0b0c10;--card:#16181f;--key:#22252e;--key2:#2c303b;--line:#2a2d36;--txt:#eef0f4;--mut:#8a8f9c;--acc:#3d7bff;--red:#ff4d4d;--ok:#38c172}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+html,body{margin:0;background:var(--bg);color:var(--txt);font:16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+body{padding:calc(env(safe-area-inset-top) + 10px) 14px calc(env(safe-area-inset-bottom) + 84px)}
+header{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+header b{font-size:19px;flex:1}
+#dot{width:9px;height:9px;border-radius:50%;background:var(--mut)}
+#st{font-size:13px;color:var(--mut)}
+.bar{display:flex;gap:8px;margin-bottom:12px}
+input{flex:1;min-width:0;padding:13px 14px;font-size:16px;border-radius:14px;border:1px solid var(--line);background:var(--card);color:var(--txt);-webkit-user-select:text;user-select:text;outline:0}
+button{font:inherit;color:var(--txt);background:var(--key);border:0;border-radius:14px;padding:0;min-height:52px;display:flex;align-items:center;justify-content:center;gap:6px;transition:transform .06s,background .06s}
+button:active,button.on{background:var(--acc);transform:scale(.96)}
+.p{background:var(--acc);padding:0 18px}.red{background:#3a1f22;color:#ff8080}.small{font-size:13px;color:var(--mut)}
+.card{background:var(--card);border-radius:20px;padding:12px;margin-bottom:12px}
+.g{display:grid;gap:8px}.g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:repeat(4,1fr)}.g5{grid-template-columns:repeat(5,1fr)}
+.lbl{font-size:12px;color:var(--mut);margin:2px 4px 8px;text-transform:uppercase;letter-spacing:.06em}
+.dpad{position:relative;width:min(78vw,300px);aspect-ratio:1;margin:6px auto 4px;border-radius:50%;background:var(--key)}
+.dpad button{position:absolute;background:transparent;min-height:0;border-radius:50%}
+.dpad .u{top:0;left:33%;width:34%;height:33%}.dpad .d{bottom:0;left:33%;width:34%;height:33%}
+.dpad .l{left:0;top:33%;width:33%;height:34%}.dpad .r{right:0;top:33%;width:33%;height:34%}
+.dpad .ok{left:30%;top:30%;width:40%;height:40%;background:var(--key2);font-weight:600}
+.dpad button:active{background:rgba(61,123,255,.35)}.dpad .ok:active{background:var(--acc)}
+.rock{display:flex;flex-direction:column;border-radius:16px;overflow:hidden;background:var(--key)}
+.rock button{border-radius:0;background:transparent;min-height:56px}.rock span{text-align:center;font-size:12px;color:var(--mut)}
+#pad{height:52vh;border-radius:20px;background:var(--card);border:1px solid var(--line);touch-action:none;position:relative;display:flex;align-items:center;justify-content:center;color:#555;font-size:14px;text-align:center;line-height:1.5}
+#scroll{position:absolute;right:0;top:0;bottom:0;width:58px;border-left:1px dashed var(--line);display:flex;align-items:center;justify-content:center;color:#555;font-size:22px}
+.tabs{position:fixed;left:0;right:0;bottom:0;display:flex;background:rgba(11,12,16,.92);backdrop-filter:blur(12px);border-top:1px solid var(--line);padding:6px 8px calc(env(safe-area-inset-bottom) + 6px)}
+.tabs button{flex:1;background:transparent;flex-direction:column;gap:2px;font-size:12px;color:var(--mut);min-height:54px}
+.tabs button.on{color:var(--txt);background:transparent;transform:none}.tabs i{font-style:normal;font-size:21px}
+section{display:none}section.on{display:block}
+#hist button{justify-content:flex-start;padding:0 14px;font-size:14px;color:#cdd;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;width:100%}
+</style></head><body>
+<header><div id="dot"></div><b>TV Links</b><span id="st">подключаюсь…</span></header>
+<div class="bar"><input id="u" placeholder="ссылка или поиск" enterkeyhint="go"><button class="p" id="ub">Открыть</button></div>
+
+<section id="s-remote" class="on">
+  <div class="card g g4">
+    <button class="red" data-k="KEY_POWER">⏻</button><button data-k="KEY_SOURCE">Вход</button>
+    <button data-k="KEY_MENU">Меню</button><button data-k="KEY_INFO">Инфо</button>
+  </div>
+  <div class="card">
+    <div class="dpad">
+      <button class="u" data-k="KEY_UP">▲</button><button class="d" data-k="KEY_DOWN">▼</button>
+      <button class="l" data-k="KEY_LEFT">◀</button><button class="r" data-k="KEY_RIGHT">▶</button>
+      <button class="ok" data-k="KEY_ENTER">OK</button>
+    </div>
+    <div class="g g3" style="margin-top:8px"><button data-k="KEY_RETURN">↩ Назад</button><button data-k="KEY_HOME">⌂ Домой</button><button data-k="KEY_EXIT">Выход</button></div>
+  </div>
+  <div class="card g" style="grid-template-columns:1fr 1fr 1fr">
+    <div class="rock"><button data-k="KEY_VOLUP">＋</button><span>громк.</span><button data-k="KEY_VOLDOWN">－</button></div>
+    <div class="g" style="align-content:space-between"><button data-k="KEY_MUTE">🔇</button><button data-k="KEY_PLAY">▶</button><button data-k="KEY_PAUSE">⏸</button></div>
+    <div class="rock"><button data-k="KEY_CHUP">＋</button><span>канал</span><button data-k="KEY_CHDOWN">－</button></div>
+  </div>
+  <div class="card g g5">
+    <button data-k="KEY_REWIND">⏪</button><button data-k="KEY_STOP">⏹</button><button data-k="KEY_PLAY">▶</button><button data-k="KEY_PAUSE">⏸</button><button data-k="KEY_FF">⏩</button>
+  </div>
+  <div class="card"><div class="lbl">Цифры</div><div class="g g5" id="nums"></div></div>
+  <div class="card"><div class="lbl">Приложения</div><div class="g g3">
+    <button data-app="111299001912">YouTube</button><button data-app="3201907018807">Netflix</button><button data-app="3201606009684">Spotify</button>
+    <button data-app="xvvl3S1bvH.TizenBrewStandalone">TizenBrew</button><button data-k="KEY_RED" style="color:#ff6b6b">● A</button><button data-k="KEY_GREEN" style="color:#5fd068">● B</button>
+  </div></div>
+</section>
+
+<section id="s-mouse">
+  <div id="pad">Палец — курсор<br>Касание — клик · Два касания — двойной клик<br>Справа полоса — прокрутка<div id="scroll">⇅</div></div>
+  <div class="card g g3" style="margin-top:12px"><button data-a="back">← Назад</button><button data-a="reload">⟳</button><button data-a="forward">Вперёд →</button></div>
+  <div class="card"><div class="lbl">Видео на сайте</div><div class="g g4">
+    <button data-m="seek" data-v="-10">−10с</button><button data-m="play">⏯</button><button data-m="seek" data-v="10">+10с</button><button data-m="full">⛶</button>
+    <button data-m="vol" data-v="-0.1">🔉</button><button data-m="vol" data-v="0.1">🔊</button><button data-s="-700">▲ стр</button><button data-s="700">▼ стр</button>
+  </div></div>
+  <div class="card"><div class="lbl">Текст в поле на сайте</div><div class="bar" style="margin:0"><input id="t" placeholder="напишите и нажмите ⏎" enterkeyhint="send"><button id="tb" class="p">⏎</button></div>
+    <div class="g g2" style="margin-top:8px"><button data-a="bs">⌫ Стереть</button><button data-a="enter">Enter</button></div></div>
+</section>
+
+<section id="s-links">
+  <div class="card"><div class="lbl">Недавние</div><div id="hist" class="g"></div></div>
+</section>
+
+<nav class="tabs"><button class="on" data-tab="remote"><i>🎛</i>Пульт</button><button data-tab="mouse"><i>🖱</i>Тачпад</button><button data-tab="links"><i>🔗</i>Ссылки</button></nav>
+
+<script>
+(function(){
+var LAN = location.port === "8781";
+var st = document.getElementById("st"), dot = document.getElementById("dot"), ws = null, tv = LAN ? 1 : 0;
+function show(t, ok){ st.textContent = t; dot.style.background = ok ? "var(--ok)" : "var(--red)"; }
+function conn(){
+  if (LAN) { show("дома, напрямую", true); return; }
+  ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+  ws.onopen = function(){ show(tv ? "ТВ на связи" : "ТВ не в сети", !!tv); };
+  ws.onmessage = function(m){ try { var d = JSON.parse(m.data); if (d.status) { tv = d.status.tv; show(tv ? "ТВ на связи" : "ТВ не в сети — откройте TV Links", !!tv); } } catch(e){} };
+  ws.onclose = function(){ show("нет связи…", false); setTimeout(conn, 1500); };
+}
+conn();
+if (!LAN) setInterval(function(){ if (ws && ws.readyState === 1) ws.send("ping"); }, 25000);
+document.addEventListener("visibilitychange", function(){ if (!LAN && !document.hidden && (!ws || ws.readyState > 1)) conn(); });
+function api(a, d){
+  d = d || {};
+  if (LAN) { fetch("/api/" + a, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(d) }).catch(function(){ show("нет связи с ТВ", false); }); return; }
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ a: a, d: d }));
+}
+function buzz(){ if (navigator.vibrate) navigator.vibrate(8); }
+function bind(sel, fn){ document.querySelectorAll(sel).forEach(function(b){ b.addEventListener("click", function(){ buzz(); fn(b); }); }); }
+var nums = document.getElementById("nums");
+"1234567890".split("").forEach(function(n){ var b = document.createElement("button"); b.textContent = n; b.dataset.k = "KEY_" + n; nums.appendChild(b); });
+bind("[data-k]", function(b){ api("key", { k: b.dataset.k }); });
+bind("[data-app]", function(b){ api("app", { id: b.dataset.app }); });
+bind("[data-a]", function(b){ api(b.dataset.a); });
+bind("[data-m]", function(b){ api("media", { cmd: b.dataset.m, v: +(b.dataset.v || 0) }); });
+bind("[data-s]", function(b){ api("scroll", { dy: +b.dataset.s }); });
+bind(".tabs button", function(b){
+  document.querySelectorAll(".tabs button").forEach(function(x){ x.classList.toggle("on", x === b); });
+  document.querySelectorAll("section").forEach(function(s){ s.classList.toggle("on", s.id === "s-" + b.dataset.tab); });
+  try { localStorage.setItem("tab", b.dataset.tab); } catch(e){}
+});
+try { var tab = localStorage.getItem("tab"); if (tab) document.querySelector('.tabs [data-tab="' + tab + '"]').click(); } catch(e){}
+// links + history
+var H = []; try { H = JSON.parse(localStorage.getItem("hist") || "[]"); } catch(e){}
+function drawHist(){ var h = document.getElementById("hist"); h.innerHTML = ""; if (!H.length) { h.innerHTML = '<span class="small">Пока пусто</span>'; return; }
+  H.forEach(function(u){ var b = document.createElement("button"); b.textContent = u.replace(/^https?:\/\//, ""); b.onclick = function(){ buzz(); api("open", { url: u }); }; h.appendChild(b); }); }
+drawHist();
+function op(){ var i = document.getElementById("u"), v = i.value.trim(); if (!v) return; api("open", { url: v });
+  H = [v].concat(H.filter(function(x){ return x !== v; })).slice(0, 20); try { localStorage.setItem("hist", JSON.stringify(H)); } catch(e){} drawHist(); i.value = ""; i.blur(); }
+document.getElementById("ub").onclick = op;
+document.getElementById("u").onkeydown = function(e){ if (e.key === "Enter") op(); };
+function tx(){ var i = document.getElementById("t"); if (i.value) { api("text", { t: i.value }); i.value = ""; } api("enter"); }
+document.getElementById("tb").onclick = tx;
+document.getElementById("t").onkeydown = function(e){ if (e.key === "Enter") { e.preventDefault(); tx(); } };
+// touchpad
+var pad = document.getElementById("pad"), sc = document.getElementById("scroll");
+var lx = 0, ly = 0, ax = 0, ay = 0, moved = 0, t0 = 0, mode = "", sy = 0, acc = 0, lastTap = 0, SPEED = 2.0;
+pad.addEventListener("touchstart", function(e){
+  e.preventDefault(); var t = e.touches[0];
+  if (e.touches.length > 1) { mode = "two"; sy = (e.touches[0].clientY + e.touches[1].clientY) / 2; acc = 0; return; }
+  mode = (e.target === sc) ? "scroll" : "move"; lx = t.clientX; ly = t.clientY; sy = t.clientY; moved = 0; t0 = Date.now(); acc = 0;
+}, { passive: false });
+pad.addEventListener("touchmove", function(e){
+  e.preventDefault();
+  if (mode === "two" || mode === "scroll") {
+    var y = e.touches.length > 1 ? (e.touches[0].clientY + e.touches[1].clientY) / 2 : e.touches[0].clientY;
+    acc += y - sy; sy = y; if (Math.abs(acc) > 6) { api("scroll", { dy: Math.round(-acc * 5) }); acc = 0; } return;
+  }
+  var t = e.touches[0], dx = t.clientX - lx, dy = t.clientY - ly;
+  var f = SPEED * (1 + Math.min(2, Math.sqrt(dx * dx + dy * dy) / 12));
+  ax += dx * f; ay += dy * f; moved += Math.abs(dx) + Math.abs(dy); lx = t.clientX; ly = t.clientY;
+}, { passive: false });
+pad.addEventListener("touchend", function(e){
+  e.preventDefault();
+  if (mode === "move" && moved < 8 && Date.now() - t0 < 300) { buzz(); api("click"); }
+  if (e.touches.length === 0) mode = "";
+}, { passive: false });
+setInterval(function(){ var dx = Math.round(ax), dy = Math.round(ay); if (dx || dy) { ax -= dx; ay -= dy; api("move", { dx: dx, dy: dy }); } }, 25);
+})();
+</script></body></html>
