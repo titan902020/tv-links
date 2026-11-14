@@ -141,6 +141,10 @@ function ensureCdp() {
   });
 }
 timers.push(setInterval(ensureCdp, 3000));
+// Re-inject after navigations: cursor.js does nothing if the page already has it.
+timers.push(setInterval(function () {
+  if (cdp && cursorCode) cdp(JSON.stringify({ id: ++cdpId, method: 'Runtime.evaluate', params: { expression: cursorCode } }));
+}, 2000));
 
 function emit(ev) {
   if (cdp) {
@@ -280,7 +284,7 @@ var opts = {};
 server.on('error', function (e) { console.log('tv-links service error: ' + e.message); });
 
 module.exports = {
-  version: '0.1.3',
+  version: '0.1.4',
   start: function (o) { opts = o || {}; server.listen(PORT, '0.0.0.0'); ensureCdp(); },
   stop: function (cb) {
     timers.forEach(clearInterval);
