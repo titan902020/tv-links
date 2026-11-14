@@ -23,7 +23,7 @@ function tvAddr() {
 var net = require('net');
 var fs = require('fs');
 var crypto = require('crypto');
-var cdp = null, cdpId = 0, cdpBusy = false;
+var cdp = null, cdpId = 0, cdpBusy = false, cdpClose = null;
 
 function listeningPorts() {
   var ports = [];
@@ -70,15 +70,17 @@ function findPage(cb) {
   })();
 }
 
-function wsConnect(url, onOpen, onClose) {
-  var m = /^ws:\/\/([^:\/]+):(\d+)(\/.*)$/.exec(url);
-  if (!m) return onClose();
-  var sock = net.connect(+m[2], m[1]);
+function wsConnect(url, onOpen, onClose, onMessage) {
+  var u = /^(wss?):\/\/([^:\/]+)(?::(\d+))?(\/.*)$/.exec(url);
+  if (!u) return onClose();
+  var secure = u[1] === 'wss';
+  var m = [null, u[2], u[3] || (secure ? '443' : '80'), u[4]];
+  var sock = secure ? require('tls').connect({ host: m[1], port: +m[2], servername: m[1] }) : net.connect(+m[2], m[1]);
   var key = crypto.randomBytes(16).toString('base64');
   var buf = new Buffer(0), open = false, closed = false;
   function close() { if (closed) return; closed = true; try { sock.destroy(); } catch (e) {} onClose(); }
-  sock.on('connect', function () {
-    sock.write('GET ' + m[3] + ' HTTP/1.1\r\nHost: ' + m[1] + ':' + m[2] + '\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n' +
+  sock.on(secure ? 'secureConnect' : 'connect', function () {
+    sock.write('GET ' + m[3] + ' HTTP/1.1\r\nHost: ' + m[1] + (secure ? '' : ':' + m[2]) + '\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n' +
       'Sec-WebSocket-Key: ' + key + '\r\nSec-WebSocket-Version: 13\r\n\r\n');
   });
   sock.on('data', function (d) {
@@ -105,12 +107,15 @@ function wsConnect(url, onOpen, onClose) {
       if (ln === 126) { if (buf.length < 4) return; ln = buf.readUInt16BE(2); off = 4; }
       else if (ln === 127) { if (buf.length < 10) return; ln = buf.readUInt32BE(6); off = 10; }
       if (buf.length < off + ln) return;
+      var data = buf.slice(off, off + ln);
       buf = buf.slice(off + ln);
       if (op === 8) return close();
+      if (op === 1 && onMessage) { try { onMessage(data.toString('utf8')); } catch (e) {} }
     }
   });
   sock.on('error', close);
   sock.on('close', close);
+  return close;
 }
 
 var cursorCode = null;
@@ -124,7 +129,7 @@ function ensureCdp() {
   cdpBusy = true;
   findPage(function (url) {
     if (!url) { cdpBusy = false; return; }
-    wsConnect(url, function (send) {
+    cdpClose = wsConnect(url, function (send) {
       cdp = send; cdpBusy = false;
       send(JSON.stringify({ id: ++cdpId, method: 'Page.setBypassCSP', params: { enabled: true } }));
       // Inject the cursor ourselves too, into the page's main world and every future document.
@@ -219,10 +224,10 @@ var PAD = [
   'document.getElementById("tb").onclick=tx;document.getElementById("t").onkeydown=function(e){if(e.key==="Enter"){tx();api("enter");}};',
   'var pad=document.getElementById("pad"),lx=0,ly=0,ax=0,ay=0,moved=0,t0=0,two=false,sy=0,acc=0,SPEED=1.8;',
   'pad.addEventListener("touchstart",function(e){e.preventDefault();var t=e.touches[0];lx=t.clientX;ly=t.clientY;moved=0;t0=Date.now();',
-  'two=e.touches.length>1;if(two){sy=e.touches[0].clientY;acc=0;}},{passive:false});',
-  'pad.addEventListener("touchmove",function(e){e.preventDefault();if(e.touches.length>1){two=true;var y=e.touches[0].clientY;acc+=y-sy;sy=y;',
-  'if(Math.abs(acc)>15){api("scroll",{dy:Math.round(-acc*4)});acc=0;}return;}',
-  'var t=e.touches[0];ax+=(t.clientX-lx)*SPEED;ay+=(t.clientY-ly)*SPEED;moved+=Math.abs(t.clientX-lx)+Math.abs(t.clientY-ly);lx=t.clientX;ly=t.clientY;},{passive:false});',
+  'if(e.touches.length>1){two=true;sy=(e.touches[0].clientY+e.touches[1].clientY)/2;acc=0;}},{passive:false});',
+  'pad.addEventListener("touchmove",function(e){e.preventDefault();if(e.touches.length>1){two=true;var y=(e.touches[0].clientY+e.touches[1].clientY)/2;acc+=y-sy;sy=y;',
+  'if(Math.abs(acc)>10){api("scroll",{dy:Math.round(-acc*4)});acc=0;}return;}',
+  'if(two)return;var t=e.touches[0];ax+=(t.clientX-lx)*SPEED;ay+=(t.clientY-ly)*SPEED;moved+=Math.abs(t.clientX-lx)+Math.abs(t.clientY-ly);lx=t.clientX;ly=t.clientY;},{passive:false});',
   'pad.addEventListener("touchend",function(e){e.preventDefault();if(!two&&moved<8&&Date.now()-t0<300)api("click");if(e.touches.length===0)two=false;},{passive:false});',
   'setInterval(function(){var dx=Math.round(ax),dy=Math.round(ay);if(dx||dy){ax-=dx;ay-=dy;api("move",{dx:dx,dy:dy});}},35);',
   '</script></body></html>'
@@ -255,12 +260,26 @@ var server = http.createServer(function (req, res) {
     return;
   }
   if (req.method === 'GET' && path === '/status') {
-    return send(res, 200, JSON.stringify({ ok: true, version: module.exports.version, pages: clients.length, cdp: !!cdp, addr: tvAddr(),
+    return send(res, 200, JSON.stringify({ ok: true, version: module.exports.version, cloud: cloud.ok, pages: clients.length, cdp: !!cdp, addr: tvAddr(),
       ports: listeningPorts() }), 'application/json');
   }
   if (req.method === 'POST' && path === '/admin/reload') {
     send(res, 202, 'reloading');
     setTimeout(selfReload, 100);
+    return;
+  }
+  if (req.method === 'POST' && path === '/admin/cloud') {
+    var cb = '';
+    req.on('data', function (ch) { cb += ch; });
+    req.on('end', function () {
+      try {
+        var d = JSON.parse(cb);
+        if (!/^https:\/\//.test(d.url) || !d.key) return send(res, 400, 'need url and key');
+        fs.writeFileSync(CFG, JSON.stringify({ url: d.url, key: d.key }));
+        cloud.retry = 2000; cloudConnect();
+        send(res, 204, '');
+      } catch (e) { send(res, 400, 'bad'); }
+    });
     return;
   }
   if (req.method === 'POST' && path.indexOf('/api/') === 0) {
@@ -275,6 +294,29 @@ var server = http.createServer(function (req, res) {
   }
   send(res, 404, 'not found');
 });
+
+// ---------- Online access: keep a WebSocket to the Cloudflare relay ----------
+var CFG = '/home/owner/share/tvlinks.json';
+var cloud = { send: null, url: null, ok: false, retry: 2000, timer: null };
+function readCfg() { try { return JSON.parse(fs.readFileSync(CFG, 'utf8')); } catch (e) { return {}; } }
+function cloudConnect() {
+  var c = readCfg();
+  if (!c.url || !c.key || cloud.send || cloud.stopped) return;
+  cloud.url = c.url;
+  cloud.close = wsConnect(c.url.replace(/^http/, 'ws').replace(/\/$/, '') + '/tv?key=' + encodeURIComponent(c.key), function (send) {
+    cloud.send = send; cloud.ok = true; cloud.retry = 2000;
+  }, function () {
+    cloud.send = null; cloud.ok = false;
+    if (cloud.stopped) return;
+    clearTimeout(cloud.timer);
+    cloud.timer = setTimeout(cloudConnect, cloud.retry);
+    cloud.retry = Math.min(cloud.retry * 2, 60000);
+  }, function (text) {
+    var msg = JSON.parse(text);
+    if (msg && msg.a) api(String(msg.a), msg.d || {});
+  });
+}
+timers.push(setInterval(function () { if (cloud.send) cloud.send('ping'); else cloudConnect(); }, 25000));
 
 var opts = {};
 
@@ -302,9 +344,12 @@ function selfReload() {
 server.on('error', function (e) { console.log('tv-links service error: ' + e.message); });
 
 module.exports = {
-  version: '0.1.5',
-  start: function (o) { opts = o || {}; server.listen(PORT, '0.0.0.0'); ensureCdp(); },
+  version: '0.1.6',
+  start: function (o) { opts = o || {}; server.listen(PORT, '0.0.0.0'); ensureCdp(); cloudConnect(); },
   stop: function (cb) {
+    cloud.stopped = true; clearTimeout(cloud.timer);
+    if (cloud.close) cloud.close();
+    if (cdpClose) { var cc = cdpClose; cdpClose = null; cc(); }
     timers.forEach(clearInterval);
     clients.forEach(function (c) { try { c.end(); } catch (e) {} });
     clients = [];
