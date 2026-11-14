@@ -70,13 +70,24 @@ function findPage(cb) {
   })();
 }
 
+// Node 4 on the TV has old root certificates; bring current ones (ISRG X1/X2, GTS, DigiCert) from dist/roots.pem.
+var ROOTS = null, lastWsError = '';
+function loadRoots() {
+  getRaw('roots.pem', function (pem) {
+    if (pem) ROOTS = pem.match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g);
+    cloud.retry = 2000; cloudConnect();
+  });
+}
+
 function wsConnect(url, onOpen, onClose, onMessage) {
   var u = /^(wss?):\/\/([^:\/]+)(?::(\d+))?(\/.*)$/.exec(url);
   if (!u) return onClose();
   var secure = u[1] === 'wss';
   var m = [null, u[2], u[3] || (secure ? '443' : '80'), u[4]];
   var local = /^(127\.|192\.168\.|10\.)/.test(m[1]);
-  var sock = secure ? require('tls').connect({ host: m[1], port: +m[2], servername: local ? undefined : m[1], rejectUnauthorized: !local })
+  var topts = { host: m[1], port: +m[2], servername: local ? undefined : m[1], rejectUnauthorized: !local };
+  if (secure && !local && ROOTS) topts.ca = ROOTS;
+  var sock = secure ? require('tls').connect(topts)
                     : net.connect(+m[2], m[1]);
   var key = crypto.randomBytes(16).toString('base64');
   var buf = new Buffer(0), open = false, closed = false;
@@ -115,7 +126,7 @@ function wsConnect(url, onOpen, onClose, onMessage) {
       if (op === 1 && onMessage) { try { onMessage(data.toString('utf8')); } catch (e) {} }
     }
   });
-  sock.on('error', close);
+  sock.on('error', function (e) { lastWsError = m[1] + ': ' + (e && e.message); close(); });
   sock.on('close', close);
   return close;
 }
@@ -264,7 +275,7 @@ var server = http.createServer(function (req, res) {
     return;
   }
   if (req.method === 'GET' && path === '/status') {
-    return send(res, 200, JSON.stringify({ ok: true, version: module.exports.version, cloud: cloud.ok, pages: clients.length, cdp: !!cdp, addr: tvAddr(),
+    return send(res, 200, JSON.stringify({ ok: true, version: module.exports.version, cloud: cloud.ok, cloudErr: lastWsError, roots: ROOTS ? ROOTS.length : 0, pages: clients.length, cdp: !!cdp, addr: tvAddr(),
       ports: listeningPorts() }), 'application/json');
   }
   if (req.method === 'POST' && path === '/admin/reload') {
@@ -377,9 +388,9 @@ function selfReload() {
 server.on('error', function (e) { console.log('tv-links service error: ' + e.message); });
 
 module.exports = {
-  version: '0.2.1',
+  version: '0.2.2',
   start: function (o) {
-    opts = o || {}; server.listen(PORT, '0.0.0.0'); ensureCdp(); cloudConnect();
+    opts = o || {}; server.listen(PORT, '0.0.0.0'); ensureCdp(); loadRoots();
     getRaw('pad.html', function (h) { if (h) padHtml = h; });
   },
   stop: function (cb) {
