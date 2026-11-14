@@ -137,6 +137,11 @@
     'background:rgba(0,0,0,.8);color:#fff;font:22px sans-serif;pointer-events:none;display:none';
   function attach() { var b = document.body || document.documentElement; b.appendChild(c); b.appendChild(toast); }
   if (document.body) attach(); else document.addEventListener('DOMContentLoaded', attach);
+  // Sites like Google focus their search box on load, which pops up the TV keyboard. Undo that once.
+  setTimeout(function () {
+    var a = document.activeElement;
+    if (a && a !== document.body && /^(INPUT|TEXTAREA)$/.test(a.tagName)) a.blur();
+  }, 800);
 
   var pend = false;
   function draw() {
