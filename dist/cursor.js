@@ -210,6 +210,7 @@
   // The TV service calls this directly through DevTools (no network from the page, so site CSP does not matter).
   var lastViaCdp = 0;
   window.__tvlHandle = function (ev) { lastViaCdp = Date.now(); handle(ev); };
+  window.__tvlVer = 3;
 
   var es, retry = 1000;
   function connect() {
