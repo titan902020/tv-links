@@ -116,11 +116,7 @@ function wsConnect(url, onOpen, onClose) {
 var cursorCode = null;
 function fetchCursor(cb) {
   if (cursorCode) return cb(cursorCode);
-  require('https').get('https://cdn.jsdelivr.net/gh/titan902020/tv-links@main/dist/cursor.js', function (res) {
-    var b = ''; res.setEncoding('utf8');
-    res.on('data', function (c) { b += c; });
-    res.on('end', function () { if (res.statusCode === 200) cursorCode = b; cb(cursorCode); });
-  }).on('error', function () { cb(null); });
+  getRaw('cursor.js', function (code) { if (code) cursorCode = code; cb(cursorCode); });
 }
 
 function ensureCdp() {
@@ -264,7 +260,7 @@ var server = http.createServer(function (req, res) {
   }
   if (req.method === 'POST' && path === '/admin/reload') {
     send(res, 202, 'reloading');
-    if (opts.reload) setTimeout(opts.reload, 100);
+    setTimeout(selfReload, 100);
     return;
   }
   if (req.method === 'POST' && path.indexOf('/api/') === 0) {
@@ -281,10 +277,32 @@ var server = http.createServer(function (req, res) {
 });
 
 var opts = {};
+
+// Updates: fetch the newest core straight from GitHub (jsDelivr caches branches for hours).
+var RAW = 'https://raw.githubusercontent.com/titan902020/tv-links/main/dist/';
+function getRaw(file, cb) {
+  require('https').get(RAW + file + '?t=' + Date.now(), function (res) {
+    var b = ''; res.setEncoding('utf8');
+    res.on('data', function (c) { b += c; });
+    res.on('end', function () { cb(res.statusCode === 200 ? b : null); });
+  }).on('error', function () { cb(null); });
+}
+function selfReload() {
+  getRaw('core.js', function (code) {
+    if (!code) return opts.reload && opts.reload();
+    module.exports.stop(function () {
+      var mod = { exports: {} };
+      try {
+        require('vm').runInThisContext('(function (module, exports, require) {' + code + '\n})')(mod, mod.exports, require);
+        mod.exports.start(opts);
+      } catch (e) { opts.reload && opts.reload(); }
+    });
+  });
+}
 server.on('error', function (e) { console.log('tv-links service error: ' + e.message); });
 
 module.exports = {
-  version: '0.1.4',
+  version: '0.1.5',
   start: function (o) { opts = o || {}; server.listen(PORT, '0.0.0.0'); ensureCdp(); },
   stop: function (cb) {
     timers.forEach(clearInterval);
