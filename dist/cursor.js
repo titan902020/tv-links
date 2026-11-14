@@ -165,6 +165,41 @@
 
   if (!isTop) return;
 
+  // ---------- popups, new windows, permission prompts ----------
+  var cfg = window.__tvlCfg || (window.__tvlCfg = { popups: 'block' });
+  var out = window.__tvlOut || (window.__tvlOut = []);
+  function absUrl(u) { try { return new URL(u, document.baseURI).href; } catch (e) { return null; } }
+  var fakeWin = { closed: false, close: function () {}, focus: function () {}, blur: function () {}, postMessage: function () {},
+    document: { write: function () {}, close: function () {} }, location: { href: '' } };
+  try {
+    window.open = function (u) {
+      var a = u && absUrl(u);
+      if (cfg.popups === 'tab' && a && !/^about:/.test(a)) out.push({ newtab: a });
+      return fakeWin;
+    };
+  } catch (e) {}
+  document.addEventListener('click', function (e) {
+    var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+    if (!a) return;
+    var t = (a.getAttribute('target') || '').toLowerCase();
+    if (!t || t === '_self' || t === '_top' || t === '_parent') return;
+    var href = absUrl(a.getAttribute('href'));
+    if (!href || /^javascript:/i.test(href)) return;
+    e.preventDefault(); e.stopPropagation();
+    if (cfg.popups === 'tab') out.push({ newtab: href }); else location.href = href;
+  }, true);
+  try {
+    if (window.Notification) {
+      window.Notification.requestPermission = function (cb) { if (cb) cb('denied'); return Promise.resolve('denied'); };
+    }
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition = function (ok, err) { if (err) err({ code: 1, message: 'denied' }); };
+      navigator.geolocation.watchPosition = function (ok, err) { if (err) err({ code: 1, message: 'denied' }); return 0; };
+    }
+    window.onbeforeunload = null;
+    window.addEventListener('beforeunload', function (e) { e.stopImmediatePropagation(); }, true);
+  } catch (e) {}
+
   // ---------- top frame: cursor + connection to the TV service ----------
   var x = innerWidth / 2, y = innerHeight / 2, shown = false, hideTimer = null;
   var c = document.createElement('div');
@@ -214,13 +249,14 @@
     else if (ev.t === 'go') { say('Открываю…'); location.href = ev.u; }
     else if (ev.t === 'media' && ev.cmd === 'full') toggleFull();
     else if (ev.t === 'media') { media(ev.cmd, ev.v); broadcast({ tvl: 'media', cmd: ev.cmd, v: ev.v }); }
+    else if (ev.t === 'cfg') { if (ev.popups) cfg.popups = ev.popups; }
     else if (ev.t === 'hello') say('Телефон: ' + ev.addr, 6000);
   }
 
   // The TV service calls this directly through DevTools (no network from the page, so site CSP does not matter).
   var lastViaCdp = 0;
   window.__tvlHandle = function (ev) { lastViaCdp = Date.now(); handle(ev); };
-  window.__tvlVer = 4;
+  window.__tvlVer = 5;
 
   var es, retry = 1000;
   function connect() {

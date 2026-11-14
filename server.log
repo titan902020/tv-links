@@ -1,0 +1,14 @@
+listening on 0.0.0.0:8780, TV 192.168.0.45
+API media {"cmd": "full"} ok
+API media {"cmd": "full"} ok
+API click {} ok
+API back {} ok
+API back {} ok
+API back {} ok
+API back {} ok
+API back {} ok
+API scroll {"dy": 35} ok
+API scroll {"dy": -35} ok
+API scroll {"dy": -52} ok
+API scroll {"dy": -40} ok
+API scroll {"dy": 145} ok

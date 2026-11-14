@@ -36,6 +36,8 @@ button:active,button.on{background:var(--acc);transform:scale(.96)}
 .tabs button{flex:1;background:transparent;flex-direction:column;gap:2px;font-size:12px;color:var(--mut);min-height:54px}
 .tabs button.on{color:var(--txt);background:transparent;transform:none}.tabs i{font-style:normal;font-size:21px}
 section{display:none}section.on{display:block}
+.tab{display:flex;gap:6px}.tab button:first-child{flex:1;justify-content:flex-start;padding:0 14px;font-size:14px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.tab.cur button:first-child{background:#1d2b4d;box-shadow:inset 0 0 0 1px var(--acc)}.tab button.x{width:52px;flex:none;color:#ff8080}
 #hist button{justify-content:flex-start;padding:0 14px;font-size:14px;color:#cdd;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;width:100%}
 </style></head><body>
 <header><div id="dot"></div><b>TV Links</b><span id="st">подключаюсь…</span></header>
@@ -81,10 +83,12 @@ section{display:none}section.on{display:block}
 </section>
 
 <section id="s-links">
-  <div class="card"><div class="lbl">Недавние</div><div id="hist" class="g"></div></div>
+  <div class="card"><div class="lbl">Вкладки</div><div id="tabs" class="g"></div>
+    <div class="g g2" style="margin-top:8px"><button class="p" id="nt">＋ Новая вкладка</button><button id="pop">Попапы: блок</button></div></div>
+  <div class="card"><div class="lbl">Недавние ссылки</div><div id="hist" class="g"></div></div>
 </section>
 
-<nav class="tabs"><button class="on" data-tab="remote"><i>🎛</i>Пульт</button><button data-tab="mouse"><i>🖱</i>Тачпад</button><button data-tab="links"><i>🔗</i>Ссылки</button></nav>
+<nav class="tabs"><button class="on" data-tab="remote"><i>🎛</i>Пульт</button><button data-tab="mouse"><i>🖱</i>Тачпад</button><button data-tab="links"><i>🗂</i>Вкладки</button></nav>
 
 <script>
 (function(){
@@ -126,6 +130,29 @@ var H = []; try { H = JSON.parse(localStorage.getItem("hist") || "[]"); } catch(
 function drawHist(){ var h = document.getElementById("hist"); h.innerHTML = ""; if (!H.length) { h.innerHTML = '<span class="small">Пока пусто</span>'; return; }
   H.forEach(function(u){ var b = document.createElement("button"); b.textContent = u.replace(/^https?:\/\//, ""); b.onclick = function(){ buzz(); api("open", { url: u }); }; h.appendChild(b); }); }
 drawHist();
+// tabs (home mode only: the page asks the server for the list)
+var TS = { tabs: [], cur: 0, popups: "block" };
+function tabsApi(a, d){
+  if (!LAN) { document.getElementById("tabs").innerHTML = '<span class="small">Вкладки пока работают только дома</span>'; return; }
+  fetch(BASE + a, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(d || {}) })
+    .then(function(r){ return r.json(); }).then(function(s){ TS = s; drawTabs(); }).catch(function(){});
+}
+function drawTabs(){
+  var box = document.getElementById("tabs"); box.innerHTML = "";
+  TS.tabs.forEach(function(t){
+    var row = document.createElement("div"); row.className = "tab" + (t.id === TS.cur ? " cur" : "");
+    var b = document.createElement("button"); b.textContent = t.title || t.url || "Новая вкладка";
+    b.onclick = function(){ buzz(); tabsApi("switch", { id: t.id }); };
+    var x = document.createElement("button"); x.className = "x"; x.textContent = "✕";
+    x.onclick = function(){ buzz(); tabsApi("closetab", { id: t.id }); };
+    row.appendChild(b); row.appendChild(x); box.appendChild(row);
+  });
+  document.getElementById("pop").textContent = TS.popups === "tab" ? "Попапы: в новую вкладку" : "Попапы: блокировать";
+}
+document.getElementById("nt").onclick = function(){ buzz(); var v = document.getElementById("u").value.trim(); document.getElementById("u").value = ""; tabsApi("newtab", { url: v }); };
+document.getElementById("pop").onclick = function(){ buzz(); tabsApi("popups", { v: TS.popups === "tab" ? "block" : "tab" }); };
+tabsApi("tabs");
+setInterval(function(){ if (!document.hidden && document.getElementById("s-links").classList.contains("on")) tabsApi("tabs"); }, 2500);
 function op(){ var i = document.getElementById("u"), v = i.value.trim(); if (!v) return; api("open", { url: v });
   H = [v].concat(H.filter(function(x){ return x !== v; })).slice(0, 20); try { localStorage.setItem("hist", JSON.stringify(H)); } catch(e){} drawHist(); i.value = ""; i.blur(); }
 document.getElementById("ub").onclick = op;
