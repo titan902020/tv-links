@@ -4,7 +4,9 @@
  */
 var http = require('http');
 var os = require('os');
+var dgram = require('dgram');
 var PORT = 8781;
+var WAKE_MAC = '58:11:22:06:7F:FD'; // home PC (Intel I219-V)
 var clients = [];
 var timers = [];
 
@@ -188,6 +190,41 @@ function normalize(t) {
 
 function clamp(v, a, b) { v = parseInt(v, 10) || 0; return Math.max(a, Math.min(b, v)); }
 
+// ---------- Wake-on-LAN: broadcast a magic packet so the TV can power on the PC ----------
+function macBytes(mac) {
+  var p = String(mac).split(/[:-]/);
+  if (p.length !== 6) return null;
+  var b = new Buffer(6);
+  for (var i = 0; i < 6; i++) { var v = parseInt(p[i], 16); if (isNaN(v)) return null; b[i] = v; }
+  return b;
+}
+function subnetBroadcast() {
+  var m = /^(\d+\.\d+\.\d+)\.\d+$/.exec(tvIp());
+  return m ? m[1] + '.255' : null;
+}
+var lastWake = 0;
+function wake(mac, cb) {
+  var mb = macBytes(mac || WAKE_MAC);
+  if (!mb) return cb && cb(false);
+  var pkt = new Buffer(102);
+  for (var i = 0; i < 6; i++) pkt[i] = 0xFF;
+  for (var r = 0; r < 16; r++) mb.copy(pkt, 6 + r * 6);
+  var targets = ['255.255.255.255']; var sb = subnetBroadcast(); if (sb && sb !== '255.255.255.255') targets.push(sb);
+  var sock = dgram.createSocket('udp4'), left = 0, replied = false;
+  function done(ok) { if (replied) return; replied = true; try { sock.close(); } catch (e) {} cb && cb(ok); }
+  sock.on('error', function () { done(false); });
+  sock.bind(function () {
+    try { sock.setBroadcast(true); } catch (e) {}
+    [7, 9].forEach(function (port) {
+      targets.forEach(function (addr) {
+        left++;
+        sock.send(pkt, 0, pkt.length, port, addr, function () { if (--left <= 0) { lastWake = Date.now(); done(true); } });
+      });
+    });
+    if (left === 0) done(false);
+  });
+}
+
 function api(name, d) {
   if (name === 'move') emit({ t: 'm', dx: clamp(d.dx, -400, 400), dy: clamp(d.dy, -400, 400) });
   else if (name === 'click') emit({ t: 'c' });
@@ -202,6 +239,7 @@ function api(name, d) {
   else if (name === 'key') { if (!/^KEY_[A-Z0-9_]+$/.test(String(d.k))) return false; tvKey(String(d.k)); }
   else if (name === 'app') { if (!/^[A-Za-z0-9._]+$/.test(String(d.id))) return false; tvApp(String(d.id)); }
   else if (name === 'media') emit({ t: 'media', cmd: String(d.cmd), v: Number(d.v) || 0 });
+  else if (name === 'wake') { wake(d && d.mac, null); }
   else return false;
   return true;
 }
@@ -276,7 +314,10 @@ var server = http.createServer(function (req, res) {
   }
   if (req.method === 'GET' && path === '/status') {
     return send(res, 200, JSON.stringify({ ok: true, version: module.exports.version, cloud: cloud.ok, cloudErr: lastWsError, roots: ROOTS ? ROOTS.length : 0, pages: clients.length, cdp: !!cdp, addr: tvAddr(),
-      ports: listeningPorts() }), 'application/json');
+      wakeMac: WAKE_MAC, lastWake: lastWake, bcast: subnetBroadcast(), ports: listeningPorts() }), 'application/json');
+  }
+  if ((req.method === 'GET' || req.method === 'POST') && path === '/wake') {
+    return wake(null, function (ok) { send(res, ok ? 200 : 500, ok ? 'magic packet sent to ' + WAKE_MAC + '\n' : 'wake failed\n', 'text/plain'); });
   }
   if (req.method === 'POST' && path === '/admin/reload') {
     send(res, 202, 'reloading');
@@ -388,7 +429,7 @@ function selfReload() {
 server.on('error', function (e) { console.log('tv-links service error: ' + e.message); });
 
 module.exports = {
-  version: '0.2.2',
+  version: '0.3.0',
   start: function (o) {
     opts = o || {}; server.listen(PORT, '0.0.0.0'); ensureCdp(); loadRoots();
     getRaw('pad.html', function (h) { if (h) padHtml = h; });
