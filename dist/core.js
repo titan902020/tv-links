@@ -7,6 +7,8 @@ var os = require('os');
 var dgram = require('dgram');
 var PORT = 8781;
 var WAKE_MAC = '58:11:22:06:7F:FD'; // home PC (Intel I219-V)
+var PC_SLEEP_HOST = '192.168.0.22'; // home PC LAN IP (default; override via /admin/pc)
+var PC_SLEEP_PORT = 8782;           // PC sleep listener (PowerShell HttpListener, SYSTEM task)
 var clients = [];
 var timers = [];
 
@@ -225,6 +227,25 @@ function wake(mac, cb) {
   });
 }
 
+// Sleep the home PC: POST to its LAN listener with the shared key in x-key.
+var lastSleep = 0;
+function sleepPc(cb) {
+  var c = readCfg();
+  var host = c.pcHost || PC_SLEEP_HOST;
+  var key = c.pcKey || '';
+  if (!key) return cb && cb(false);
+  var req2;
+  try {
+    req2 = http.request({ host: host, port: PC_SLEEP_PORT, method: 'POST', path: '/sleep', headers: { 'x-key': key } }, function (res) {
+      res.resume();
+      if (res.statusCode === 200) lastSleep = Date.now();
+      cb && cb(res.statusCode === 200);
+    });
+  } catch (e) { return cb && cb(false); }
+  req2.on('error', function () { cb && cb(false); });
+  req2.end();
+}
+
 function api(name, d) {
   if (name === 'move') emit({ t: 'm', dx: clamp(d.dx, -400, 400), dy: clamp(d.dy, -400, 400) });
   else if (name === 'click') emit({ t: 'c' });
@@ -240,6 +261,8 @@ function api(name, d) {
   else if (name === 'app') { if (!/^[A-Za-z0-9._]+$/.test(String(d.id))) return false; tvApp(String(d.id)); }
   else if (name === 'media') emit({ t: 'media', cmd: String(d.cmd), v: Number(d.v) || 0 });
   else if (name === 'wake') { wake(d && d.mac, null); }
+  else if (name === 'sleep') { sleepPc(null); }
+  else if (name === 'reloadcore') { setTimeout(selfReload, 50); }
   else return false;
   return true;
 }
@@ -314,7 +337,8 @@ var server = http.createServer(function (req, res) {
   }
   if (req.method === 'GET' && path === '/status') {
     return send(res, 200, JSON.stringify({ ok: true, version: module.exports.version, cloud: cloud.ok, cloudErr: lastWsError, roots: ROOTS ? ROOTS.length : 0, pages: clients.length, cdp: !!cdp, addr: tvAddr(),
-      wakeMac: WAKE_MAC, lastWake: lastWake, bcast: subnetBroadcast(), ports: listeningPorts() }), 'application/json');
+      wakeMac: WAKE_MAC, lastWake: lastWake, bcast: subnetBroadcast(), ports: listeningPorts(),
+      pcHost: (readCfg().pcHost || PC_SLEEP_HOST), pcKeySet: !!readCfg().pcKey, lastSleep: lastSleep }), 'application/json');
   }
   if ((req.method === 'GET' || req.method === 'POST') && path === '/wake') {
     return wake(null, function (ok) { send(res, ok ? 200 : 500, ok ? 'magic packet sent to ' + WAKE_MAC + '\n' : 'wake failed\n', 'text/plain'); });
@@ -337,6 +361,24 @@ var server = http.createServer(function (req, res) {
       } catch (e) { send(res, 400, 'bad'); }
     });
     return;
+  }
+  if (req.method === 'POST' && path === '/admin/pc') {
+    var pb = '';
+    req.on('data', function (ch) { pb += ch; });
+    req.on('end', function () {
+      try {
+        var d = JSON.parse(pb);
+        if (!d.key) return send(res, 400, 'need key');
+        var patch = { pcKey: String(d.key) };
+        if (d.host) patch.pcHost = String(d.host);
+        writeCfg(patch);
+        send(res, 204, '');
+      } catch (e) { send(res, 400, 'bad'); }
+    });
+    return;
+  }
+  if ((req.method === 'GET' || req.method === 'POST') && path === '/pc/sleep') {
+    return sleepPc(function (ok) { send(res, ok ? 200 : 500, ok ? 'sleep sent\n' : 'sleep failed\n', 'text/plain'); });
   }
   if (req.method === 'POST' && path.indexOf('/api/') === 0) {
     var body = '';
@@ -429,7 +471,7 @@ function selfReload() {
 server.on('error', function (e) { console.log('tv-links service error: ' + e.message); });
 
 module.exports = {
-  version: '0.3.0',
+  version: '0.4.0',
   start: function (o) {
     opts = o || {}; server.listen(PORT, '0.0.0.0'); ensureCdp(); loadRoots();
     getRaw('pad.html', function (h) { if (h) padHtml = h; });
