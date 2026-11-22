@@ -324,6 +324,19 @@ var server = http.createServer(function (req, res) {
     setTimeout(selfReload, 100);
     return;
   }
+  if (path === '/admin/tbconfig') {
+    var TBC = '/home/owner/share/tizenbrewConfig.json';
+    var cb2 = '';
+    req.on('data', function (ch) { cb2 += ch; });
+    req.on('end', function () {
+      try {
+        var conf = JSON.parse(fs.readFileSync(TBC, 'utf8'));
+        if (req.method === 'POST' && cb2) { var dd = JSON.parse(cb2); if (dd.autoLaunchModule) { conf.autoLaunchModule = String(dd.autoLaunchModule); fs.writeFileSync(TBC, JSON.stringify(conf, null, 4)); } }
+        send(res, 200, JSON.stringify(conf), 'application/json');
+      } catch (e) { send(res, 500, 'err ' + e.message, 'text/plain'); }
+    });
+    return;
+  }
   if (req.method === 'POST' && path === '/admin/cloud') {
     var cb = '';
     req.on('data', function (ch) { cb += ch; });
